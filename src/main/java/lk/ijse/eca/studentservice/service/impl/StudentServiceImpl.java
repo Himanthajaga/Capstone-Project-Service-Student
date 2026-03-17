@@ -31,7 +31,6 @@ public class StudentServiceImpl implements StudentService {
 
     private final StudentRepository studentRepository;
     private final StudentMapper studentMapper;
-    private final GcpImageStorageService imageStorageService;
 
     @Value("${app.storage.path}")
     private String storagePathStr;
@@ -66,11 +65,10 @@ public class StudentServiceImpl implements StudentService {
 
         // DB operation first (deferred) — rolls back if file save below throws
         studentRepository.save(student);
-        imageStorageService.save(pictureId, dto.getPicture());
         log.debug("Student persisted to DB: {}", dto.getNic());
 
         // Immediate file operation — failure triggers @Transactional rollback
-       // savePicture(pictureId, dto.getPicture());
+        savePicture(pictureId, dto.getPicture());
 
         log.info("Student created successfully: {}", dto.getNic());
         return studentMapper.toResponseDto(student);
@@ -113,8 +111,7 @@ public class StudentServiceImpl implements StudentService {
 
         if (pictureChanged) {
             // Save new picture — failure triggers @Transactional rollback
-           // savePicture(newPictureId, dto.getPicture());
-            imageStorageService.save(newPictureId, dto.getPicture());
+            savePicture(newPictureId, dto.getPicture());
             // Remove old picture — best-effort; DB and new file are already consistent
             tryDeletePicture(oldPictureId);
         }
@@ -150,11 +147,10 @@ public class StudentServiceImpl implements StudentService {
 
         // DB deletion (deferred) — rolls back if file delete below throws
         studentRepository.delete(student);
-        imageStorageService.delete(pictureId);
         log.debug("Student marked for deletion in DB: {}", nic);
 
         // Immediate file deletion — failure triggers @Transactional rollback
-        //deletePicture(pictureId);
+        deletePicture(pictureId);
 
         log.info("Student deleted successfully: {}", nic);
     }
@@ -192,10 +188,10 @@ public class StudentServiceImpl implements StudentService {
                     log.warn("Student not found: {}", nic);
                     return new StudentNotFoundException(nic);
                 });
-//        Path filePath = storagePath().resolve(student.getPicture());
+        Path filePath = storagePath().resolve(student.getPicture());
         try {
-            return imageStorageService.read(student.getPicture());
-        } catch (FileOperationException e) {
+            return Files.readAllBytes(filePath);
+        } catch (IOException e) {
             log.error("Failed to read picture for student: {}", nic, e);
             throw new FileOperationException("Failed to read picture for student: " + nic, e);
         }
@@ -205,51 +201,51 @@ public class StudentServiceImpl implements StudentService {
     // Private helpers
     // -------------------------------------------------------------------------
 
-//    private Path storagePath() {
-//        if (storagePath == null) {
-//            storagePath = Paths.get(storagePathStr);
-//        }
-//        try {
-//            Files.createDirectories(storagePath);
-//        } catch (IOException e) {
-//            throw new FileOperationException(
-//                    "Failed to create storage directory: " + storagePath.toAbsolutePath(), e);
-//        }
-//        return storagePath;
-//    }
+    private Path storagePath() {
+        if (storagePath == null) {
+            storagePath = Paths.get(storagePathStr);
+        }
+        try {
+            Files.createDirectories(storagePath);
+        } catch (IOException e) {
+            throw new FileOperationException(
+                    "Failed to create storage directory: " + storagePath.toAbsolutePath(), e);
+        }
+        return storagePath;
+    }
 
-//    private void savePicture(String pictureId, MultipartFile file) {
-//        if (file == null || file.isEmpty()) {
-//            throw new FileOperationException("Picture file must not be empty");
-//        }
-//        Path filePath = storagePath().resolve(pictureId);
-//        try {
-//            Files.write(filePath, file.getBytes());
-//            log.debug("Picture saved: {}", filePath);
-//        } catch (IOException e) {
-//            log.error("Failed to save picture: {}", filePath, e);
-//            throw new FileOperationException("Failed to save picture file: " + pictureId, e);
-//        }
-//    }
+    private void savePicture(String pictureId, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new FileOperationException("Picture file must not be empty");
+        }
+        Path filePath = storagePath().resolve(pictureId);
+        try {
+            Files.write(filePath, file.getBytes());
+            log.debug("Picture saved: {}", filePath);
+        } catch (IOException e) {
+            log.error("Failed to save picture: {}", filePath, e);
+            throw new FileOperationException("Failed to save picture file: " + pictureId, e);
+        }
+    }
 
-//    private void deletePicture(String pictureId) {
-//        Path filePath = storagePath().resolve(pictureId);
-//        try {
-//            boolean deleted = Files.deleteIfExists(filePath);
-//            if (deleted) {
-//                log.debug("Picture deleted: {}", filePath);
-//            } else {
-//                log.warn("Picture file not found on disk (already removed?): {}", filePath);
-//            }
-//        } catch (IOException e) {
-//            log.error("Failed to delete picture: {}", filePath, e);
-//            throw new FileOperationException("Failed to delete picture file: " + pictureId, e);
-//        }
-//    }
+    private void deletePicture(String pictureId) {
+        Path filePath = storagePath().resolve(pictureId);
+        try {
+            boolean deleted = Files.deleteIfExists(filePath);
+            if (deleted) {
+                log.debug("Picture deleted: {}", filePath);
+            } else {
+                log.warn("Picture file not found on disk (already removed?): {}", filePath);
+            }
+        } catch (IOException e) {
+            log.error("Failed to delete picture: {}", filePath, e);
+            throw new FileOperationException("Failed to delete picture file: " + pictureId, e);
+        }
+    }
 
     private void tryDeletePicture(String pictureId) {
         try {
-            imageStorageService.delete(pictureId);
+            deletePicture(pictureId);
         } catch (FileOperationException e) {
             log.warn("Could not delete old picture file '{}'. Manual cleanup may be required.", pictureId);
         }
