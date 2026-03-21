@@ -174,7 +174,7 @@ public class StudentServiceImpl implements StudentService {
         List<StudentResponseDTO> students = studentRepository.findAll()
                 .stream()
                 .map(studentMapper::toResponseDto)
-                .peek(s -> s.setAddress(s.getAddress() + ", Sri Lanka"))
+                .peek(s -> s.setAddress(s.getAddress() + ", LK"))
                 .collect(Collectors.toList());
         log.debug("Fetched {} students", students.size());
         return students;
